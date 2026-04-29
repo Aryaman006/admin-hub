@@ -31,6 +31,7 @@ import CourseDetailPage from "./pages/public/CourseDetailPage";
 import NotFound from "./pages/NotFound";
 import WithdrawalRequestsPage from "./pages/admin/WithdrawlPage";
 import StaffPage from "./pages/admin/StaffPage";
+import PricingPage from "./pages/admin/PricingPage";
 
 // TEMPORARY: Set to false to show the maintenance page, true to restore normal app
 const MAINTENANCE_MODE_DISABLED = true;
@@ -163,6 +164,7 @@ const AppRoutes = () => {
         <Route path="/blogs/create" element={<ProtectedRoute module="blogs"><CreateBlogPage /></ProtectedRoute>} />
         <Route path="/blogs/edit/:id" element={<ProtectedRoute module="blogs"><EditBlogPage /></ProtectedRoute>} />
         <Route path="/withdrawals" element={<ProtectedRoute module="withdrawals"><WithdrawalRequestsPage /></ProtectedRoute>} />
+        <Route path="/pricing" element={<ProtectedRoute module="pricing"><PricingPage /></ProtectedRoute>} />
         <Route path="/staff" element={<ProtectedRoute module="staff"><StaffPage /></ProtectedRoute>} />
       </Route>
       <Route

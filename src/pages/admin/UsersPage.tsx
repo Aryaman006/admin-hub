@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Search, Eye, Ban, CheckCircle, Trash2, CreditCard } from "lucide-react";
+import { Search, Eye, Ban, CheckCircle, Trash2, CreditCard, Download } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { exportUsersData } from "@/utils/excelExport";
 
 interface UserData {
   id: string;
@@ -33,6 +34,7 @@ const UsersPage = () => {
   const [filteredUsers, setFilteredUsers] = useState<UserData[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteUser, setDeleteUser] = useState<UserData | null>(null);
@@ -139,6 +141,24 @@ const UsersPage = () => {
     fetchUsers();
   };
 
+  const handleExportUsers = async () => {
+    setIsExporting(true);
+    try {
+      if (users.length === 0) {
+        toast.error("No users to export");
+        return;
+      }
+
+      exportUsersData(users);
+      toast.success(`Exported ${users.length} users successfully`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to export users";
+      toast.error(errorMessage);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleBlockToggle = async (userId: string, currentStatus: boolean) => {
     toast.info("Block/unblock requires adding is_blocked column to profiles table");
   };
@@ -239,7 +259,21 @@ const UsersPage = () => {
 
   return (
     <>
-      <PageHeader title="Users" description="Manage all users on the platform" />
+      <PageHeader 
+        title="Users" 
+        description="Manage all users on the platform"
+      >
+        <PermissionGuard module="users" action="read">
+          <Button 
+            onClick={handleExportUsers}
+            disabled={isExporting || users.length === 0}
+            variant="outline"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Exporting..." : "Export Users"}
+          </Button>
+        </PermissionGuard>
+      </PageHeader>
 
       <Card>
         <CardContent className="p-6">

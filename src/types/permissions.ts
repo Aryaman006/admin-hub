@@ -12,6 +12,7 @@ export type AdminModule =
   | 'media_events'
   | 'blogs'
   | 'withdrawals'
+  | 'pricing'
   | 'staff';
 
 export type CrudAction = 'create' | 'read' | 'update' | 'delete';
@@ -46,6 +47,7 @@ export const ALL_MODULES: { key: AdminModule; label: string }[] = [
   { key: 'media_events', label: 'Media & Events' },
   { key: 'blogs', label: 'Blogs' },
   { key: 'withdrawals', label: 'Withdrawals' },
+  { key: 'pricing', label: 'Pricing Management' },
   { key: 'staff', label: 'Staff Management' },
 ];
 

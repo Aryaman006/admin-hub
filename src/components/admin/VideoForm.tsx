@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
  } from '@/components/ui/dialog';
  import FileUpload from './FileUpload';
  import { toast } from 'sonner';
+ import { removeUploadedObject, type UploadBucket, type UploadResult } from '@/utils/uploadUtils';
  
 interface Video {
     id: string;
@@ -50,6 +51,8 @@ interface Video {
  
  const VideoForm = ({ open, onOpenChange, video, categories, onSuccess }: VideoFormProps) => {
    const [isSubmitting, setIsSubmitting] = useState(false);
+   const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
+   const [newUploads, setNewUploads] = useState<Array<{ bucket: UploadBucket; path: string }>>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -64,6 +67,8 @@ interface Video {
  
    useEffect(() => {
      if (open && video) {
+       setNewUploads([]);
+       setUploadingFields({});
        setFormData({
          title: video.title,
         description: video.description || '',
@@ -76,6 +81,8 @@ interface Video {
          is_published: video.is_published,
        });
      } else if (open && !video) {
+       setNewUploads([]);
+       setUploadingFields({});
        setFormData({
          title: '',
         description: '',
@@ -89,8 +96,48 @@ interface Video {
        });
      }
    }, [open, video]);
+
+   const isUploading = Object.values(uploadingFields).some(Boolean);
+
+   const setUploadState = (field: string) => (uploading: boolean) => {
+     setUploadingFields((prev) => ({ ...prev, [field]: uploading }));
+   };
+
+   const handleDialogOpenChange = (nextOpen: boolean) => {
+     if (!nextOpen && isUploading) {
+       toast.warning('Please wait for the upload to finish or cancel it before closing.');
+       return;
+     }
+     onOpenChange(nextOpen);
+   };
+
+   const trackUpload = (bucket: UploadBucket) => (result: UploadResult) => {
+     setNewUploads((prev) => [...prev, { bucket, path: result.path }]);
+   };
+
+   const cleanupNewUploads = async (reason: string) => {
+     if (newUploads.length === 0) return;
+     const uploadsToRemove = newUploads;
+
+     await Promise.allSettled(
+       uploadsToRemove.map((upload) => removeUploadedObject(upload.bucket, upload.path, reason))
+     );
+     setFormData((prev) => ({
+       ...prev,
+       thumbnail_url: uploadsToRemove.some((upload) => upload.bucket === 'thumbnails' && prev.thumbnail_url.includes(upload.path)) ? '' : prev.thumbnail_url,
+       video_url: uploadsToRemove.some((upload) => upload.bucket === 'videos' && prev.video_url.includes(upload.path)) ? '' : prev.video_url,
+     }));
+     setNewUploads([]);
+   };
  
    const handleSubmit = async () => {
+    if (isSubmitting) return;
+
+    if (isUploading) {
+      toast.error('Upload is still in progress. Please wait before saving.');
+      return;
+    }
+
     if (!formData.title.trim()) {
       toast.error('Video title is required');
       return;
@@ -116,26 +163,37 @@ interface Video {
            .update(payload)
            .eq('id', video.id);
  
-         if (error) throw error;
+         if (error) {
+           console.error('[video-save:failure]', { action: 'update', videoId: video.id, payload, error });
+           throw error;
+         }
+         console.info('[video-save:success]', { action: 'update', videoId: video.id });
          toast.success('Video updated successfully');
        } else {
          // @ts-expect-error - Schema mismatch with actual DB
          const { error } = await supabase.from('videos').insert([payload]);
-         if (error) throw error;
+         if (error) {
+           console.error('[video-save:failure]', { action: 'insert', payload, error });
+           throw error;
+         }
+         console.info('[video-save:success]', { action: 'insert', title: payload.title });
          toast.success('Video created successfully');
        }
  
+       setNewUploads([]);
        onOpenChange(false);
        onSuccess();
-     } catch (error: any) {
-       toast.error(error.message || 'Failed to save video');
+     } catch (error: unknown) {
+       console.error('[video-save:failure:handled]', { payload, error });
+       await cleanupNewUploads('video-db-save-failed');
+       toast.error(error instanceof Error ? error.message : 'Failed to save video. The uploaded file was cleaned up; please try again.');
      } finally {
        setIsSubmitting(false);
      }
    };
  
    return (
-     <Dialog open={open} onOpenChange={onOpenChange}>
+     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
          <DialogHeader>
            <DialogTitle>{video ? 'Edit Video' : 'Add Video'}</DialogTitle>
@@ -206,6 +264,8 @@ interface Video {
                accept="image/jpeg,image/png,image/webp,image/gif"
                value={formData.thumbnail_url}
                onChange={(url) => setFormData({ ...formData, thumbnail_url: url })}
+               onUploadStateChange={setUploadState('thumbnail')}
+               onUploadComplete={trackUpload('thumbnails')}
                label="Upload Thumbnail"
              />
            </div>
@@ -217,6 +277,8 @@ interface Video {
                accept="video/mp4,video/webm,video/quicktime"
                value={formData.video_url}
                onChange={(url) => setFormData((prev) => ({ ...prev, video_url: url }))}
+               onUploadStateChange={setUploadState('video')}
+               onUploadComplete={trackUpload('videos')}
                onDurationDetected={(duration) => setFormData((prev) => ({ ...prev, duration_seconds: duration }))}
                label="Upload Video"
                maxSizeMB={500}
@@ -241,11 +303,11 @@ interface Video {
            </div>
          </div>
          <DialogFooter>
-           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+           <Button variant="outline" onClick={() => handleDialogOpenChange(false)} disabled={isSubmitting || isUploading}>
              Cancel
            </Button>
-           <Button onClick={handleSubmit} disabled={isSubmitting}>
-             {isSubmitting ? 'Saving...' : video ? 'Update' : 'Create'}
+           <Button onClick={handleSubmit} disabled={isSubmitting || isUploading}>
+             {isUploading ? 'Uploading...' : isSubmitting ? 'Saving...' : video ? 'Update' : 'Create'}
            </Button>
          </DialogFooter>
        </DialogContent>

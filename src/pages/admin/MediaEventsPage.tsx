@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Image as ImageIcon, Loader2 } from 'lucide-react';
 import FileUpload from '@/components/admin/FileUpload';
+import { removeUploadedObject, type UploadBucket, type UploadResult } from '@/utils/uploadUtils';
 
 interface MediaEvent {
   id: string;
@@ -28,11 +29,15 @@ const MediaEventsPage = () => {
   const [imageUrl, setImageUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
+  const [newUploads, setNewUploads] = useState<Array<{ bucket: UploadBucket; path: string }>>([]);
+
+  const isUploading = Object.values(uploadingFields).some(Boolean);
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['media-events'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('media_events')
         .select('*')
         .order('created_at', { ascending: false });
@@ -46,6 +51,8 @@ const MediaEventsPage = () => {
     setImageUrl('');
     setVideoUrl('');
     setEditingItem(null);
+    setUploadingFields({});
+    setNewUploads([]);
   };
 
   const openCreate = () => {
@@ -54,6 +61,8 @@ const MediaEventsPage = () => {
   };
 
   const openEdit = (item: MediaEvent) => {
+    setNewUploads([]);
+    setUploadingFields({});
     setEditingItem(item);
     setDescription(item.description || '');
     setImageUrl(item.image_url || '');
@@ -61,8 +70,45 @@ const MediaEventsPage = () => {
     setDialogOpen(true);
   };
 
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open && isUploading) {
+      toast.warning('Please wait for the upload to finish or cancel it before closing.');
+      return;
+    }
+    setDialogOpen(open);
+    if (!open) resetForm();
+  };
+
+  const setUploadState = (field: string) => (uploading: boolean) => {
+    setUploadingFields((prev) => ({ ...prev, [field]: uploading }));
+  };
+
+  const trackUpload = (bucket: UploadBucket) => (result: UploadResult) => {
+    setNewUploads((prev) => [...prev, { bucket, path: result.path }]);
+  };
+
+  const cleanupNewUploads = async (reason: string) => {
+    if (newUploads.length === 0) return;
+    const uploadsToRemove = newUploads;
+
+    await Promise.allSettled(
+      uploadsToRemove.map((upload) => removeUploadedObject(upload.bucket, upload.path, reason))
+    );
+    if (uploadsToRemove.some((upload) => upload.bucket === 'thumbnails' && imageUrl.includes(upload.path))) {
+      setImageUrl('');
+    }
+    if (uploadsToRemove.some((upload) => upload.bucket === 'videos' && videoUrl.includes(upload.path))) {
+      setVideoUrl('');
+    }
+    setNewUploads([]);
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (isUploading) {
+        throw new Error('Upload is still in progress. Please wait before saving.');
+      }
+
       setSaving(true);
       const payload = {
         description,
@@ -71,16 +117,26 @@ const MediaEventsPage = () => {
       };
 
       if (editingItem) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('media_events')
+          // @ts-expect-error - media_events exists in production but is missing from generated Supabase types
           .update(payload)
           .eq('id', editingItem.id);
-        if (error) throw error;
+        if (error) {
+          console.error('[media-event-save:failure]', { action: 'update', id: editingItem.id, payload, error });
+          throw error;
+        }
+        console.info('[media-event-save:success]', { action: 'update', id: editingItem.id });
       } else {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('media_events')
+          // @ts-expect-error - media_events exists in production but is missing from generated Supabase types
           .insert(payload);
-        if (error) throw error;
+        if (error) {
+          console.error('[media-event-save:failure]', { action: 'insert', payload, error });
+          throw error;
+        }
+        console.info('[media-event-save:success]', { action: 'insert' });
       }
     },
     onSuccess: () => {
@@ -90,30 +146,31 @@ const MediaEventsPage = () => {
       resetForm();
       setSaving(false);
     },
-    onError: (err: any) => {
+    onError: async (err: unknown) => {
       console.error('Media event save error:', err);
-      toast.error(err.message);
+      await cleanupNewUploads('media-event-db-save-failed');
+      toast.error(err instanceof Error ? err.message : 'Failed to save media event. Uploaded files were cleaned up; please try again.');
       setSaving(false);
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase as any).from('media_events').delete().eq('id', id);
+      const { error } = await supabase.from('media_events').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media-events'] });
       toast.success('Deleted successfully');
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to delete media event'),
   });
 
   return (
     <div className="space-y-6">
       <PageHeader title="Media & Events" description="Manage images, videos, and descriptions">
         <PermissionGuard module="media_events" action="create">
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
                 <Plus className="w-4 h-4 mr-2" /> Add New
@@ -138,6 +195,8 @@ const MediaEventsPage = () => {
                     accept="image/*"
                     value={imageUrl}
                     onChange={setImageUrl}
+                    onUploadStateChange={setUploadState('image')}
+                    onUploadComplete={trackUpload('thumbnails')}
                     label="Upload Image"
                   />
                 </div>
@@ -148,12 +207,14 @@ const MediaEventsPage = () => {
                     accept="video/*"
                     value={videoUrl}
                     onChange={setVideoUrl}
+                    onUploadStateChange={setUploadState('video')}
+                    onUploadComplete={trackUpload('videos')}
                     label="Upload Video"
                   />
                 </div>
-                <Button type="submit" disabled={saving || (!description && !imageUrl && !videoUrl)} className="w-full">
+                <Button type="submit" disabled={saving || isUploading || (!description && !imageUrl && !videoUrl)} className="w-full">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  {editingItem ? 'Update' : 'Create'}
+                  {isUploading ? 'Uploading...' : editingItem ? 'Update' : 'Create'}
                 </Button>
               </form>
             </DialogContent>

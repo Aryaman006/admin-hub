@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
+import { exportWithdrawalsData } from "@/utils/excelExport";
 
 const tabs = ["all", "pending", "approved", "completed", "rejected"];
 
@@ -13,6 +15,7 @@ const WithdrawalRequestsPage = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchRequests();
@@ -160,9 +163,41 @@ const WithdrawalRequestsPage = () => {
     return "-";
   };
 
+  const handleExportWithdrawals = async () => {
+    setIsExporting(true);
+    try {
+      if (requests.length === 0) {
+        toast.error("No withdrawals to export");
+        return;
+      }
+
+      exportWithdrawalsData(requests);
+      toast.success(`Exported ${requests.length} withdrawals successfully`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to export withdrawals";
+      toast.error(errorMessage);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <>
-      <PageHeader title="Withdrawal Requests" description="Manage payouts" />
+      <PageHeader 
+        title="Withdrawal Requests" 
+        description="Manage payouts"
+      >
+        <PermissionGuard module="withdrawals" action="read">
+          <Button 
+            onClick={handleExportWithdrawals}
+            disabled={isExporting || requests.length === 0}
+            variant="outline"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Exporting..." : "Export Withdrawals"}
+          </Button>
+        </PermissionGuard>
+      </PageHeader>
 
       {/* Summary */}
       <Card className="mb-4">

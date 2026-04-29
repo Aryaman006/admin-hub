@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/courses-blog", label: "Courses Blog", module: "courses_blog" },
   { to: "/media-events", label: "Media & Events", module: "media_events" },
   { to: "/blogs", label: "Blogs", module: "blogs" },
+  { to: "/pricing", label: "Pricing", module: "pricing" },
   { to: "/withdrawals", label: "Withdrawals", module: "withdrawals" },
   { to: "/staff", label: "Staff", module: "staff" },
 ];

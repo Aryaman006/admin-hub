@@ -5,6 +5,7 @@ import PageHeader from '@/components/admin/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -20,14 +21,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, IndianRupee, TrendingUp, CreditCard } from 'lucide-react';
+import { Search, IndianRupee, TrendingUp, CreditCard, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import StatCard from '@/components/admin/StatCard';
+import PermissionGuard from '@/components/admin/PermissionGuard';
+import { exportPaymentsData } from '@/utils/excelExport';
 
 const PaymentsPage = () => {
   const [payments, setPayments] = useState<any[]>([]);
   const [filteredPayments, setFilteredPayments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [userMap, setUserMap] = useState<Record<string, { name: string; email: string }>>({});
@@ -128,9 +132,56 @@ const PaymentsPage = () => {
     }
   };
 
+  const handleExportPayments = async () => {
+    setIsExporting(true);
+    try {
+      if (payments.length === 0) {
+        toast.error("No payments to export");
+        return;
+      }
+
+      // Transform payments to include user details for export
+      const paymentsForExport = payments.map((payment) => ({
+        id: payment.id,
+        user_id: payment.user_id,
+        user_name: userMap[payment.user_id]?.name || 'N/A',
+        user_email: userMap[payment.user_id]?.email || 'N/A',
+        amount: payment.amount,
+        gst_amount: payment.gst_amount,
+        plan_name: payment.subscriptions?.plan_name || payment.plan_name || 'N/A',
+        status: payment.status,
+        razorpay_order_id: payment.razorpay_order_id,
+        razorpay_payment_id: payment.razorpay_payment_id,
+        created_at: payment.created_at,
+      }));
+
+      exportPaymentsData(paymentsForExport);
+      toast.success(`Exported ${payments.length} payments successfully`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to export payments";
+      toast.error(errorMessage);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <>
-      <PageHeader title="Payments" description="View payment history and revenue" />
+      <PageHeader 
+        title="Payments" 
+        description="View payment history and revenue"
+      >
+        <PermissionGuard module="payments" action="read">
+          <Button 
+            onClick={handleExportPayments}
+            disabled={isExporting || payments.length === 0}
+            variant="outline"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Exporting..." : "Export Payments"}
+          </Button>
+        </PermissionGuard>
+      </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard

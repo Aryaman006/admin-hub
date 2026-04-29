@@ -23,9 +23,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Plus, Trash2, Building2, Users, Eye, Search, Ticket,
+  Plus, Trash2, Building2, Users, Eye, Search, Ticket, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { exportCorporatesData } from '@/utils/excelExport';
 
 interface Corporate {
   id: string;
@@ -109,6 +110,7 @@ const CorporatesPage = () => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Corporate | null>(null);
   const [viewingCorp, setViewingCorp] = useState<Corporate | null>(null);
 
@@ -224,6 +226,24 @@ const CorporatesPage = () => {
     onError: (err: any) => toast.error(err.message || 'Failed to update status'),
   });
 
+  const handleExportCorporates = async () => {
+    setIsExporting(true);
+    try {
+      if (corporates.length === 0) {
+        toast.error("No corporates to export");
+        return;
+      }
+
+      exportCorporatesData(corporates);
+      toast.success(`Exported ${corporates.length} corporates successfully`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to export corporates";
+      toast.error(errorMessage);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const filtered = corporates.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.coupon_code || '').toLowerCase().includes(search.toLowerCase())
@@ -231,7 +251,21 @@ const CorporatesPage = () => {
 
   return (
     <>
-       <PageHeader title="Corporates" description="Manage corporate accounts, admins, and members">
+       <PageHeader 
+        title="Corporates" 
+        description="Manage corporate accounts, admins, and members"
+      >
+        <PermissionGuard module="corporates" action="read">
+          <Button 
+            onClick={handleExportCorporates}
+            disabled={isExporting || corporates.length === 0}
+            variant="outline"
+            className="mr-2"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Exporting..." : "Export Corporates"}
+          </Button>
+        </PermissionGuard>
         <PermissionGuard module="corporates" action="create">
           <Button onClick={() => { setFormData({ name: '', coupon_code: '', admin_email: '', admin_password: '' }); setIsFormOpen(true); }}>
             <Plus className="w-4 h-4 mr-2" /> Create Corporate
