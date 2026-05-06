@@ -18,6 +18,7 @@ import {
   FileText,
   Wallet,
   UserCog,
+  Settings2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/contexts/PermissionsContext";
@@ -39,6 +40,7 @@ const iconMap: Record<string, any> = {
   "/blogs": FileText,
   "/withdrawals": Wallet,
   "/staff": UserCog,
+  "/pricing": Settings2,
 };
 
 const AdminSidebar = () => {
